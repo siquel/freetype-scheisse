@@ -20,6 +20,8 @@ public:
 };
 
 int main(int argc, char** argv) {
+	// Perkele.
+
 	glm::mat4 alegs;
 	Unisade::getInstance().gahvee();
 	assert(&Unisade::getInstance() == &Unisade::getInstance());
