@@ -3,11 +3,16 @@
 #include <iostream>
 #include <cassert>
 #include <SDL2\SDL.h>
+#include <ft2build.h>
+#include FT_FREETYPE_H
 
 SDL_Window* window = nullptr;
 SDL_GLContext glContext;
 bool quit = false;
+FT_Library library;
+
 void init() {
+	FT_Init_FreeType(&library);
 	SDL_Init(SDL_INIT_EVERYTHING);
 
 	// Set OpenGL attributes.
@@ -70,6 +75,7 @@ int main(int argc, char** argv) {
 	}
 
 	SDL_Quit();
+	FT_Done_FreeType(library);
 	return 0;
 }
 
