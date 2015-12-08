@@ -45,13 +45,13 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>$(SolutionDir)thirdparty\include</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalOptions>-std=C++11 %(AdditionalOptions)</AdditionalOptions>
+      <PreprocessorDefinitions>GLEW_STATIC;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(SolutionDir)thirdparty\lib</AdditionalLibraryDirectories>
-      <AdditionalDependencies>glew32s.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>glew32s.lib;SDL2.lib;SDL2main.lib;OpenGL32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <SubSystem>Console</SubSystem>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -69,12 +69,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="src\exceptions.cpp" />
     <ClCompile Include="src\main.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="src\exceptions.hpp" />
-    <ClInclude Include="src\singleton.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
