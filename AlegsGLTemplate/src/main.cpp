@@ -18,10 +18,97 @@ SDL_Window* window = nullptr;
 SDL_GLContext glContext;
 bool quit = false;
 FT_Library library;
-
+GLuint VBO;
+GLuint ebo;
+GLuint program;
 typedef unsigned char uint8;
 typedef unsigned short uint16;
 typedef unsigned int uint32;
+
+
+GLuint loadShader(const String& resourcePath) {
+	std::string vertexTemp;
+	std::string fragmentTemp;
+
+	std::ifstream vertexFile;
+	std::ifstream fragmentFile;
+
+	GLuint program;
+
+	vertexFile.exceptions(std::ifstream::badbit);
+	fragmentFile.exceptions(std::ifstream::badbit);
+
+	try
+	{
+		vertexFile.open(resourcePath + ".vertex");
+		fragmentFile.open(resourcePath + ".fragment");
+
+		std::stringstream vertexStream;
+		std::stringstream fragmentStream;
+
+		vertexStream << vertexFile.rdbuf();
+		fragmentStream << fragmentFile.rdbuf();
+
+		vertexFile.close();
+		fragmentFile.close();
+
+		vertexTemp = vertexStream.str();
+		fragmentTemp = fragmentStream.str();
+	}
+	catch (std::ifstream::failure error)
+	{
+		std::cout << "ERROR: Reading shader " << std::endl;
+	}
+
+	const GLchar* vertexCode = vertexTemp.c_str();
+	const GLchar* fragmentCode = fragmentTemp.c_str();
+
+	GLuint vertex;
+	GLuint fragment;
+	GLint success;
+	GLchar infoLog[512];
+
+	vertex = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(vertex, 1, &vertexCode, nullptr);
+	glCompileShader(vertex);
+
+	glGetShaderiv(vertex, GL_COMPILE_STATUS, &success);
+
+	if (!success)
+	{
+		glGetShaderInfoLog(vertex, 512, nullptr, infoLog);
+		std::cout << "ERROR: Shader compilation: " << std::endl << infoLog << std::endl;
+	}
+
+	fragment = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(fragment, 1, &fragmentCode, nullptr);
+	glCompileShader(fragment);
+
+	glGetShaderiv(fragment, GL_COMPILE_STATUS, &success);
+
+	if (!success)
+	{
+		glGetShaderInfoLog(fragment, 512, nullptr, infoLog);
+		std::cout << "ERROR: Shader compilation: " << std::endl << infoLog << std::endl;
+	}
+
+	program = glCreateProgram();
+	glAttachShader(program, vertex);
+	glAttachShader(program, fragment);
+	glLinkProgram(program);
+
+	glGetProgramiv(program, GL_LINK_STATUS, &success);
+
+	if (!success)
+	{
+		glGetProgramInfoLog(program, 512, nullptr, infoLog);
+		std::cout << "ERROR: Program linking: " << std::endl << infoLog << std::endl;
+	}
+
+	glDeleteShader(vertex);
+	glDeleteShader(fragment);
+	return program;
+}
 
 static std::string platformGetFontPath(const String& faceName) {
 	static const LPWSTR fontRegistryPath = L"Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts";
@@ -138,6 +225,7 @@ void initFreetype();
 int main(int argc, char** argv) {
 	init();
 	initFreetype();
+	program = loadShader("asd");
 	while (!quit) {
 		SDL_Event evnt;
 		while (SDL_PollEvent(&evnt)) {
@@ -170,8 +258,7 @@ struct Vec2
 };
 union Pixel32
 {
-	Pixel32()
-		: integer(0) { }
+	Pixel32() : b(0), r(0), g(0), a(0) {}
 	Pixel32(uint8 bi, uint8 gi, uint8 ri, uint8 ai = 255)
 	{
 		b = bi;
@@ -179,8 +266,6 @@ union Pixel32
 		r = ri;
 		a = ai;
 	}
-
-	uint32 integer;
 
 	struct
 	{
@@ -249,7 +334,7 @@ void renderSpans(FT_Outline* outline, std::vector<Span>* spans) {
 
 void initFreetype() {
 	FT_Init_FreeType(&library);
-	FT_Face face = loadFont(String("Arial Black"), 20);
+	FT_Face face = loadFont(String("Arial"), 50);
 
 	char start = 'A';
 	char end = 'A';
@@ -324,18 +409,19 @@ void initFreetype() {
 
 		for (Span& s : outlineSpans) {
 			for (int w = 0; w < s.width; ++w) {
-				pxl[(int)((imgHeight - 1 - (s.y - rect.ymin)) * imgWidth + s.x - rect.xmin + w)]
-					= Pixel32(255, 0, 0); // outline color
+				pxl[(int)((imgHeight - 1 - (s.y - rect.ymin)) * imgWidth
+					+ s.x - rect.xmin + w)]
+					= Pixel32(255, 0, 0, s.coverage); // outline color
 			}
 		}
 
 		for (Span& s : spans) {
 			for (int w = 0; w < s.width; ++w) {
 				Pixel32 &dst =
-					pxl[(int)((imgHeight - 1 - (s.x - rect.ymin)) * imgWidth
+					pxl[(int)((imgHeight - 1 - (s.y - rect.ymin)) * imgWidth
 					+ s.x - rect.xmin + w)];
 
-				Pixel32 src = Pixel32(0, 255, 0); // font color
+				Pixel32 src = Pixel32(0, 255, 0, s.coverage); // font color
 				dst.r = (int)(dst.r + ((src.r - dst.r) * src.a) / 255.0f);
 				dst.g = (int)(dst.g + ((src.g - dst.g) * src.a) / 255.0f);
 				dst.b = (int)(dst.b + ((src.b - dst.b) * src.a) / 255.0f);
@@ -345,20 +431,54 @@ void initFreetype() {
 		GLuint tex;
 		glGenTextures(1, &tex);
 		glBindTexture(GL_TEXTURE_2D, tex);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, imgWidth, imgHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, pxl);
 		glBindTexture(GL_TEXTURE_2D, 0);
 		delete[] pxl;
 	}
+
+	float vertices[] = {
+		//  Position      Color             Texcoords
+		-0.1f, 0.1f, 0.0f, 0.0f, // Top-left
+		0.1f, 0.1f, 1.0f, 0.0f, // Top-right
+		0.1f, -0.1f, 1.0f, 1.0f, // Bottom-right
+		-0.1f, -0.1f, 0.0f, 1.0f  // Bottom-left
+	};
+	glGenBuffers(1, &VBO);
+	glBindBuffer(GL_ARRAY_BUFFER, VBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+	glEnableVertexAttribArray(0);
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), 0);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE,	4 * sizeof(float), (void*)(2 * sizeof(float)));
+	
+	
+	// Create an element array
+
+	glGenBuffers(1, &ebo);
+
+	GLuint elements[] = {
+		0, 1, 2,
+		2, 3, 0
+	};
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(elements), elements, GL_STATIC_DRAW);
+
+
 }
 
 void update() {
-
-
+	
 }
 
 void draw() {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glUseProgram(program);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, 1);
+	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 	SDL_GL_SwapWindow(window);
 }
