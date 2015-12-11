@@ -526,7 +526,7 @@ int renderText(std::string& text, float x, float y) {
 		GlyphWrapper ch = glyphs[*c];
 
 		float xpos = x + ch.bearinX;
-		float ypos = y - (ch.height - ch.bearingY);
+		float ypos = y - (ch.bearingY) + TextureHeight;
 		float w = ch.width;
 		float h = ch.height;
 
