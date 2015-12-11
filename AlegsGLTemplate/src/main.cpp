@@ -331,14 +331,22 @@ void renderSpans(FT_Outline* outline, std::vector<Span>* spans) {
 
 	FT_Outline_Render(library, outline, &params);
 }
-
+struct GlyphWrapper {
+	Pixel32* pixels;
+	int width;
+	int height;
+	float bearinX;
+	float bearingY;
+	float advance;
+};
 void initFreetype() {
 	FT_Init_FreeType(&library);
-	FT_Face face = loadFont(String("Arial"), 50);
+	FT_Face face = loadFont(String("Arial"), 200);
 
-	char start = 'A';
-	char end = 'A';
+	char start = 'a';
+	char end = 'g';
 	float outlineWidth = 3.f;
+	std::vector<GlyphWrapper> glyphs;
 	for (char ch = start; ch <= end; ch++) {
 		FT_UInt gindex = FT_Get_Char_Index(face, ch);
 		if (FT_Load_Glyph(face, gindex, FT_LOAD_NO_BITMAP)) throw std::runtime_error("Failed!");
@@ -394,9 +402,9 @@ void initFreetype() {
 		}
 
 		// HOW TO?
-		float bearingX = face->glyph->metrics.horiBearingX >> 6;
-		float bearingY = face->glyph->metrics.horiBearingY >> 6;
-		float advance = face->glyph->advance.x >> 6;
+		float bearingX = face->glyph->metrics.horiBearingX >> 6; // left
+		float bearingY = face->glyph->metrics.horiBearingY >> 6; // top
+		float advance = face->glyph->advance.x >> 6; // offset
 
 		// Get some metrics of our image.
 		int imgWidth = rect.Width(),
@@ -428,24 +436,50 @@ void initFreetype() {
 				dst.a = min(255, dst.a + src.a);
 			}
 		}
-		GLuint tex;
-		glGenTextures(1, &tex);
-		glBindTexture(GL_TEXTURE_2D, tex);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, imgWidth, imgHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, pxl);
-		glBindTexture(GL_TEXTURE_2D, 0);
-		delete[] pxl;
+
+		glyphs.push_back(GlyphWrapper{
+			pxl,
+			imgWidth,
+			imgHeight,
+			bearingX,
+			bearingY,
+			advance
+		});
+
 	}
 
+	GLuint tex;
+	glGenTextures(1, &tex);
+	glBindTexture(GL_TEXTURE_2D, tex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+	int width = 0;
+	int height = 0;
+	for (auto& g : glyphs) {
+		width += g.width;
+		height = max(height, g.height);
+	}
+
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+
+	int x = 0;
+	for (auto& g : glyphs) {
+		glTexSubImage2D(GL_TEXTURE_2D, 0, x, 0, g.width, g.height, GL_RGBA, GL_UNSIGNED_BYTE, g.pixels);
+		x += g.width;
+	}
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	float p = 0.8f;
 	float vertices[] = {
 		//  Position      Color             Texcoords
-		-0.1f, 0.1f, 0.0f, 0.0f, // Top-left
-		0.1f, 0.1f, 1.0f, 0.0f, // Top-right
-		0.1f, -0.1f, 1.0f, 1.0f, // Bottom-right
-		-0.1f, -0.1f, 0.0f, 1.0f  // Bottom-left
+		-p, p, 0.0f, 0.0f, // Top-left
+		p, p, 1.0f, 0.0f, // Top-right
+		p, -p, 1.0f, 1.0f, // Bottom-right
+		-p, -p, 0.0f, 1.0f  // Bottom-left
 	};
 	glGenBuffers(1, &VBO);
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
