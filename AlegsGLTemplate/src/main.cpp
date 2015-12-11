@@ -8,7 +8,11 @@
 #include <sstream>
 #include <iostream>
 #include <vector>
+#include <map>
 #include <string>
+#include <glm/gtx/transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <algorithm>
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include FT_STROKER_H
@@ -24,7 +28,9 @@ GLuint program;
 typedef unsigned char uint8;
 typedef unsigned short uint16;
 typedef unsigned int uint32;
-
+glm::mat4 mvp = glm::ortho(0.f, 1280.f, 720.f, 0.f, -1.f, 1.f);
+int TextureWidth = 0;
+int TextureHeight = 0;
 
 GLuint loadShader(const String& resourcePath) {
 	std::string vertexTemp;
@@ -281,10 +287,10 @@ struct Rect
 
 	void Include(const Vec2 &r)
 	{
-		xmin = min(xmin, r.x);
-		ymin = min(ymin, r.y);
-		xmax = max(xmax, r.x);
-		ymax = max(ymax, r.y);
+		xmin = std::min(xmin, r.x);
+		ymin = std::min(ymin, r.y);
+		xmax = std::max(xmax, r.x);
+		ymax = std::max(ymax, r.y);
 	}
 
 	float Width() const { return xmax - xmin + 1; }
@@ -338,7 +344,11 @@ struct GlyphWrapper {
 	float bearinX;
 	float bearingY;
 	float advance;
+	float x;
+	float y;
 };
+
+std::map<char, GlyphWrapper> glyphs;
 void initFreetype() {
 	FT_Init_FreeType(&library);
 	FT_Face face = loadFont(String("Arial"), 200);
@@ -346,7 +356,8 @@ void initFreetype() {
 	char start = 'a';
 	char end = 'g';
 	float outlineWidth = 3.f;
-	std::vector<GlyphWrapper> glyphs;
+	float offX = 0;
+	float offY = 0;
 	for (char ch = start; ch <= end; ch++) {
 		FT_UInt gindex = FT_Get_Char_Index(face, ch);
 		if (FT_Load_Glyph(face, gindex, FT_LOAD_NO_BITMAP)) throw std::runtime_error("Failed!");
@@ -433,19 +444,21 @@ void initFreetype() {
 				dst.r = (int)(dst.r + ((src.r - dst.r) * src.a) / 255.0f);
 				dst.g = (int)(dst.g + ((src.g - dst.g) * src.a) / 255.0f);
 				dst.b = (int)(dst.b + ((src.b - dst.b) * src.a) / 255.0f);
-				dst.a = min(255, dst.a + src.a);
+				dst.a = std::min(255, dst.a + src.a);
 			}
 		}
 
-		glyphs.push_back(GlyphWrapper{
+		glyphs[ch] = (GlyphWrapper{
 			pxl,
 			imgWidth,
 			imgHeight,
 			bearingX,
 			bearingY,
-			advance
+			advance,
+			offX,
+			offY
 		});
-
+		offX += imgWidth;
 	}
 
 	GLuint tex;
@@ -459,31 +472,25 @@ void initFreetype() {
 	int width = 0;
 	int height = 0;
 	for (auto& g : glyphs) {
-		width += g.width;
-		height = max(height, g.height);
+		width += g.second.width;
+		height = std::max(height, g.second.height);
 	}
+	TextureWidth = width;
+	TextureHeight = height;
 
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
 	int x = 0;
 	for (auto& g : glyphs) {
-		glTexSubImage2D(GL_TEXTURE_2D, 0, x, 0, g.width, g.height, GL_RGBA, GL_UNSIGNED_BYTE, g.pixels);
-		x += g.width;
+		glTexSubImage2D(GL_TEXTURE_2D, 0, x, 0, g.second.width, g.second.height, GL_RGBA, GL_UNSIGNED_BYTE, g.second.pixels);
+		x += g.second.width;
 	}
 
 	glBindTexture(GL_TEXTURE_2D, 0);
-
-	float p = 0.8f;
-	float vertices[] = {
-		//  Position      Color             Texcoords
-		-p, p, 0.0f, 0.0f, // Top-left
-		p, p, 1.0f, 0.0f, // Top-right
-		p, -p, 1.0f, 1.0f, // Bottom-right
-		-p, -p, 0.0f, 1.0f  // Bottom-left
-	};
 	glGenBuffers(1, &VBO);
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+	// 100 sprites, 4 points per sprite, 4 floats 
+	glBufferData(GL_ARRAY_BUFFER, 100 * 4 * 4 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
 	glEnableVertexAttribArray(0);
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), 0);
@@ -493,15 +500,82 @@ void initFreetype() {
 	// Create an element array
 
 	glGenBuffers(1, &ebo);
+	std::vector<unsigned short> indices;
+	indices.reserve(100 * 6);
+	for (unsigned short i = 0; i < 100 * 6; i += 4) {
+		indices.push_back(i);
+		indices.push_back(i + 1);
+		indices.push_back(i + 2);
 
-	GLuint elements[] = {
-		0, 1, 2,
-		2, 3, 0
-	};
+		indices.push_back(i + 1);
+		indices.push_back(i + 3);
+		indices.push_back(i + 2);
+	}
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(elements), elements, GL_STATIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(unsigned short) * indices.size(), indices.data(), GL_STATIC_DRAW);
+
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
 
 
+int renderText(std::string& text, float x, float y) {
+	glBindBuffer(GL_ARRAY_BUFFER, VBO);
+	int offset = 0;
+	std::string::const_iterator c;
+	for (c = text.begin(); c != text.end(); ++c) {
+		GlyphWrapper ch = glyphs[*c];
+
+		float xpos = x + ch.bearinX;
+		float ypos = y - (ch.height - ch.bearingY);
+		float w = ch.width;
+		float h = ch.height;
+
+		struct Vertex {
+			float x;
+			float y;
+			float u;
+			float v;
+		};
+		
+		// top left x
+		float s0 = ch.x / (float)TextureWidth;
+		// top left y
+		float t0 = ch.y / (float)TextureHeight;
+		// bottom right x
+		float s1 = (ch.x + ch.width) / (float)TextureWidth;
+		// bottom right y
+		float t1 = (ch.y + ch.height) / (float)TextureHeight;
+		Vertex vertices[4];
+		// top left
+		vertices[0] = Vertex{
+			xpos,
+			ypos,
+			s0,
+			t0
+		};
+		vertices[1] = Vertex{
+			xpos + w,
+			ypos,
+			s1,
+			t0
+		};
+		vertices[2] = Vertex{
+			xpos,
+			ypos + h,
+			s0,
+			t1
+		};
+		vertices[3] = Vertex{
+			xpos + w,
+			ypos + h,
+			s1,
+			t1
+		};
+		glBufferSubData(GL_ARRAY_BUFFER, sizeof(Vertex) * 4 * offset, sizeof(vertices), vertices);
+		offset++;
+		x += ch.width;
+	}
+	return offset;
 }
 
 void update() {
@@ -513,6 +587,9 @@ void draw() {
 	glUseProgram(program);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, 1);
-	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+	GLuint mvpLocation = glGetUniformLocation(program, "mvp");
+	glUniformMatrix4fv(mvpLocation, 1, GL_FALSE, glm::value_ptr(mvp));
+	int cnt = renderText(std::string("adfg"), 200, 200);
+	glDrawElements(GL_TRIANGLES, 6 * cnt, GL_UNSIGNED_SHORT, 0);
 	SDL_GL_SwapWindow(window);
 }
