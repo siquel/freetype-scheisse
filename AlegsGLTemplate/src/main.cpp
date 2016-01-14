@@ -348,6 +348,17 @@ struct GlyphWrapper {
 	float y;
 };
 
+
+void flippaa(Pixel32* pxl, int w, int h) {
+	for (int r = 0; r < (h / 2); r++)
+	{
+		for (int c = 0; c != w; ++c)
+		{
+			std::swap(pxl[r * w + c], pxl[(h - 1 - r) * w + c]);
+		}
+	}
+}
+
 std::map<char, GlyphWrapper> glyphs;
 void initFreetype() {
 	FT_Init_FreeType(&library);
@@ -360,10 +371,10 @@ void initFreetype() {
 	float offY = 0;
 	for (char ch = start; ch <= end; ch++) {
 		FT_UInt gindex = FT_Get_Char_Index(face, ch);
-		if (FT_Load_Glyph(face, gindex, FT_LOAD_NO_BITMAP)) throw std::runtime_error("Failed!");
-		
+		if (FT_Load_Glyph(face, gindex, FT_LOAD_DEFAULT)) throw std::runtime_error("Failed!");
+		if (FT_Load_Char(face, ch, FT_LOAD_RENDER)) throw std::runtime_error("asd");
 		// Need an outline for this to work.
-		if (face->glyph->format != FT_GLYPH_FORMAT_OUTLINE) throw std::runtime_error("No outline");
+		//if (face->glyph->format != FT_GLYPH_FORMAT_OUTLINE) throw std::runtime_error("No outline");
 
 		std::vector<Span> spans;
 		renderSpans(&face->glyph->outline, &spans);
@@ -384,7 +395,7 @@ void initFreetype() {
 		if (FT_Get_Glyph(face->glyph, &glyph)) throw std::runtime_error("Cant get glyph");
 
 		FT_Glyph_StrokeBorder(&glyph, stroker, 0, 1);
-		if (glyph->format != FT_GLYPH_FORMAT_OUTLINE) throw std::runtime_error("Not outline");
+	//	if (glyph->format != FT_GLYPH_FORMAT_OUTLINE) throw std::runtime_error("Not outline");
 
 		// render the outline spans to the span list
 		FT_Outline* o = &reinterpret_cast<FT_OutlineGlyph>(glyph)->outline;
@@ -411,12 +422,13 @@ void initFreetype() {
 			rect.Include(Vec2(s.x, s.y));
 			rect.Include(Vec2(s.x + s.width - 1, s.y));
 		}
-
+		
 		// HOW TO?
 		float bearingX = face->glyph->metrics.horiBearingX >> 6; // left
 		float bearingY = face->glyph->metrics.horiBearingY >> 6; // top
 		float advance = face->glyph->advance.x >> 6; // offset
-
+		assert(bearingX == face->glyph->bitmap_left);
+		assert(bearingY == face->glyph->bitmap_top);
 		// Get some metrics of our image.
 		int imgWidth = rect.Width(),
 			imgHeight = rect.Height(),
@@ -447,6 +459,7 @@ void initFreetype() {
 				dst.a = std::min(255, dst.a + src.a);
 			}
 		}
+		flippaa(pxl, imgWidth, imgHeight);
 
 		glyphs[ch] = (GlyphWrapper{
 			pxl,
@@ -525,8 +538,8 @@ int renderText(std::string& text, float x, float y) {
 	for (c = text.begin(); c != text.end(); ++c) {
 		GlyphWrapper ch = glyphs[*c];
 
-		float xpos = x + ch.bearinX;
-		float ypos = y - (ch.bearingY) + TextureHeight;
+		float xpos = x + ch.bearinX ;
+		float ypos = y - float(ch.bearingY) + TextureHeight;
 		float w = ch.width;
 		float h = ch.height;
 
@@ -546,34 +559,79 @@ int renderText(std::string& text, float x, float y) {
 		// bottom right y
 		float t1 = (ch.y + ch.height) / (float)TextureHeight;
 		Vertex vertices[4];
-		// top left
+		//vertices[0] = Vertex{
+		//	xpos,
+		//	ypos + h,
+		//	s0,
+		//	t0
+		//};
+		//
+		//// top left
+		//vertices[1] = Vertex{
+		//	xpos,
+		//	ypos,
+		//	s0,
+		//	t1
+		//};
+		//vertices[2] = Vertex{
+		//	xpos + w,
+		//	ypos,
+		//	s1,
+		//	t1
+		//};
+
+		//vertices[3] = Vertex{
+		//	xpos + w,
+		//	ypos + h,
+		//	s1,
+		//	t0
+		//};
 		vertices[0] = Vertex{
 			xpos,
 			ypos,
 			s0,
-			t0
+			t1
 		};
 		vertices[1] = Vertex{
 			xpos + w,
 			ypos,
 			s1,
-			t0
+			t1
 		};
 		vertices[2] = Vertex{
 			xpos,
 			ypos + h,
 			s0,
-			t1
+			t0
 		};
 		vertices[3] = Vertex{
 			xpos + w,
 			ypos + h,
 			s1,
-			t1
+			t0
 		};
+
 		glBufferSubData(GL_ARRAY_BUFFER, sizeof(Vertex) * 4 * offset, sizeof(vertices), vertices);
+		//glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
+/*		GLuint FBO;
+		glGenFramebuffers(1, &FBO);
+		glBindFramebuffer(GL_FRAMEBUFFER, FBO);
+		
+		GLuint t;
+		glGenTextures(1, &t);
+		glBindTexture(GL_TEXTURE_2D, t);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 800, 600, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, t, 0);
+		assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+
+		glBindTexture(GL_TEXTURE_2D, 1);
+		glDrawArrays(GL_TRIANGLES, 0, 6);*/
 		offset++;
-		x += ch.width;
+		x += ch.advance;
 	}
 	return offset;
 }
@@ -589,7 +647,7 @@ void draw() {
 	glBindTexture(GL_TEXTURE_2D, 1);
 	GLuint mvpLocation = glGetUniformLocation(program, "mvp");
 	glUniformMatrix4fv(mvpLocation, 1, GL_FALSE, glm::value_ptr(mvp));
-	int cnt = renderText(std::string("adfg"), 200, 200);
+	int cnt = renderText(std::string("adfg"), 200, 0);
 	glDrawElements(GL_TRIANGLES, 6 * cnt, GL_UNSIGNED_SHORT, 0);
 	SDL_GL_SwapWindow(window);
 }
